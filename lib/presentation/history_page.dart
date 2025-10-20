@@ -58,57 +58,64 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Future<void> _shareToStory(String date, int steps, int rank) async {
   try {
-    final Size storySize = const Size(1080, 1920); // Instagram Story
+    final Size storySize = const Size(1080, 1920);
 
-    final imageBytes = await _screenshotController.captureFromWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: SizedBox.fromSize(
-          size: storySize,
-          child: Stack(
-            children: [
-              // 1. Your custom background image (with all its text, logo, design)
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/strido_story_bg.jpg',
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.high,
-                ),
+    // Create a widget with explicit size and repaint boundary
+    final Widget captureWidget = RepaintBoundary(
+      child: SizedBox.fromSize(
+        size: storySize,
+        child: Stack(
+          children: [
+            // Background Image
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/strido_story_bg.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(color: Colors.black); // Fallback if image fails
+                },
               ),
+            ),
 
-              // 2. ONLY ADD: Rotated Step Count (centered, large, diagonal)
-              Positioned.fill(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: Transform.rotate(
-                    angle: -0.26, // ~ -15 degrees for dynamic look
-                    child: Text(
-                      '$steps',
-                      style: const TextStyle(
-                        fontSize: 200, // Very large for impact
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF3DFF00), // Bright green to match your brand
-                        shadows: [
-                          Shadow(
-                            offset: Offset(4, 4),
-                            blurRadius: 20,
-                            color: Colors.black54,
-                          ),
-                        ],
-                      ),
+            // ONLY ADD: Rotated Step Count
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.center,
+                child: Transform.rotate(
+                  angle: -0.26, // ~ -15 degrees
+                  child: Text(
+                    '$steps',
+                    style: const TextStyle(
+                      fontSize: 200,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF3DFF00), // Bright green
+                      shadows: [
+                        Shadow(
+                          offset: Offset(4, 4),
+                          blurRadius: 20,
+                          color: Colors.black54,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-      delay: const Duration(milliseconds: 300),
-      pixelRatio: 3.0, // High-res output
     );
 
-    if (imageBytes == null) throw Exception('Image capture returned null');
+    final imageBytes = await _screenshotController.captureFromWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: captureWidget,
+      ),
+      delay: const Duration(milliseconds: 500), // Give time for image to load
+      pixelRatio: 3.0,
+    );
+
+    if (imageBytes == null) throw Exception('Capture failed: returned null');
 
     // Save and share
     final tempDir = await getTemporaryDirectory();
@@ -128,6 +135,7 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 }
 
+  
   void _showDetails(Map<String, Object?> row) async {
     final date = row['date']?.toString() ?? 'Unknown Date';
     final steps = (row['user_steps'] as int?) ?? 0;
