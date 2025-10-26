@@ -51,6 +51,9 @@ class NotificationService {
   }
   static const int _notificationId = 888;
   static bool _isForegroundServiceStarted = false;
+  static const String _foregroundChannelId = 'strido_foreground_channel';
+  static const String _foregroundChannelName = 'Strido Tracker Service';
+  static const String _foregroundChannelDescription = 'Keeps Strido running in the background to track your steps 24/7';
 
   static Future<void> init() async {
     try {
@@ -61,21 +64,37 @@ class NotificationService {
       developer.log('Notification permission granted: $hasPermission');
 
       // Initialize notification channel for Android 8.0+
-      developer.log('Creating notification channel...');
+      developer.log('Creating notification channels...');
+      
+      // Regular notifications channel
       const AndroidNotificationChannel channel = AndroidNotificationChannel(
         _channelId,
         _channelName,
         description: _channelDescription,
-        importance: Importance.low,
+        importance: Importance.high,
         playSound: false,
         showBadge: true,
         enableVibration: false,
       );
 
-      await _flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
-      developer.log('Notification channel created');
+      // Foreground service notification channel (required for Android 8.0+)
+      const AndroidNotificationChannel foregroundChannel = AndroidNotificationChannel(
+        _foregroundChannelId,
+        _foregroundChannelName,
+        description: _foregroundChannelDescription,
+        importance: Importance.low,
+        playSound: false,
+        showBadge: false,
+        enableVibration: false,
+      );
+
+      final androidPlugin = _flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+          
+      await androidPlugin?.createNotificationChannel(channel);
+      await androidPlugin?.createNotificationChannel(foregroundChannel);
+      
+      developer.log('Notification channels created');
 
       // Initialize notification settings
       developer.log('Initializing notification settings...');
@@ -106,48 +125,88 @@ class NotificationService {
     }
   }
 
-  static Future<void> updateForegroundNotification(int steps, String updatedTime) async {
+  /// Update notification with step data
+  static Future<void> updateNotificationWithData({
+    required int steps,
+    required int calories,
+    required double distance,
+    DateTime? lastSync,
+  }) async {
     try {
-      developer.log('Updating foreground notification: $steps steps at $updatedTime');
+      final distanceKm = (distance / 1000).toStringAsFixed(2);
       
-      // Check if notifications are enabled
-      final bool? isEnabled = await _flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.areNotificationsEnabled();
-      
-      if (isEnabled != true) {
-        developer.log('Notifications are disabled in system settings');
-        return;
+      String message;
+      if (lastSync != null) {
+        final syncTime = _formatTime(lastSync);
+        message = '$steps steps • $calories cal • $distanceKm km • Last sync: $syncTime';
+      } else {
+        message = '$steps steps • $calories cal • $distanceKm km';
       }
+      
+      await showForegroundNotification(
+        title: 'Strido Step Tracker',
+        message: message,
+        isPersistent: true,
+      );
+    } catch (e) {
+      developer.log('Error updating notification with data: $e');
+    }
+  }
 
+  static String _formatTime(DateTime time) {
+    final hour = time.hour > 12 ? time.hour - 12 : time.hour == 0 ? 12 : time.hour;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  static Future<void> showForegroundNotification({
+    required String title,
+    required String message,
+    String? payload,
+    bool isPersistent = true,
+  }) async {
+    try {
       final androidDetails = AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDescription,
-        importance: Importance.low,
-        priority: Priority.low,
-        ongoing: true,
-        autoCancel: false,
-        icon: 'ic_launcher',
+        isPersistent ? _foregroundChannelId : _channelId,
+        isPersistent ? _foregroundChannelName : _channelName,
+        channelDescription: isPersistent 
+            ? _foregroundChannelDescription 
+            : _channelDescription,
+        importance: isPersistent ? Importance.low : Importance.high,
+        priority: isPersistent ? Priority.low : Priority.high,
+        ongoing: isPersistent,
+        autoCancel: !isPersistent,
+        showWhen: !isPersistent,
+        enableVibration: false,
+        playSound: false,
+        channelShowBadge: !isPersistent,
         visibility: NotificationVisibility.public,
-        enableLights: true,
-        color: const Color(0xFF69F0AE), // Use your app's accent color
-        colorized: true,
-        showWhen: false,
+        // Ensure the notification can't be dismissed
+        // ignore: deprecated_member_use
         onlyAlertOnce: true,
-        showProgress: false,
       );
 
-      final iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: false,
+      await _flutterLocalNotificationsPlugin.show(
+        _notificationId,
+        title,
+        message,
+        NotificationDetails(
+          android: androidDetails,
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: false,
+          ),
+        ),
+        payload: payload,
       );
-
-      final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-      final String message = '$steps steps as of $updatedTime';
-
-      if (!_isForegroundServiceStarted) {
+      
+      _isForegroundServiceStarted = isPersistent;
+      
+      if (isPersistent) {
+        // Request to keep CPU on for background processing
+        // This is important for step counting to work reliably
         developer.log('Starting foreground service...');
         await _flutterLocalNotificationsPlugin
             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
@@ -159,15 +218,6 @@ class NotificationService {
             );
         _isForegroundServiceStarted = true;
         developer.log('Foreground service started');
-      } else {
-        developer.log('Updating existing notification...');
-        await _flutterLocalNotificationsPlugin.show(
-          _notificationId,
-          'Strido is Running',
-          message,
-          details,
-        );
-        developer.log('Notification updated');
       }
     } catch (e, stackTrace) {
       developer.log('Error updating notification: $e', 
@@ -178,6 +228,15 @@ class NotificationService {
 
   static Future<void> cancel() async {
     await _flutterLocalNotificationsPlugin.cancel(_notificationId);
-    _isForegroundServiceStarted = false;
+  }
+  
+  /// Check if foreground service is active
+  static bool isForegroundServiceActive() {
+    return _isForegroundServiceStarted;
+  }
+  
+  /// Cancel foreground notification
+  static Future<void> cancelForegroundNotification() async {
+    await cancel();
   }
 }

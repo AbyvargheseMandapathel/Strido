@@ -21,7 +21,6 @@ class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingOb
 
   int _steps = 0;
   String? _lastUpdated;
-  String _status = 'INITIALIZING';
 
   // Persistent daily goal
   int _stepGoal = 10000;
@@ -33,13 +32,18 @@ class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingOb
     DeviceSyncService.instance.loadPaired();
     _service = StepTrackerService();
     _initService();
-    _loadGoal();
+    
+    // Initialize step goal from preferences or use default
+    _loadStepGoal();
   }
 
-  Future<void> _loadGoal() async {
+  Future<void> _loadStepGoal() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _stepGoal = prefs.getInt('daily_step_goal') ?? 10000);
+    setState(() {
+      _stepGoal = prefs.getInt('step_goal') ?? 20000;
+    });
   }
+
 
   Future<void> _saveGoal(int goal) async {
     final prefs = await SharedPreferences.getInstance();
@@ -74,11 +78,9 @@ class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingOb
     if (res != null) await _saveGoal(res);
   }
 
-   @override
 Future<void> _initService() async {
   final permsOk = await PermissionsHelper.ensureBlePermissions(context);
   if (!permsOk) {
-    if (mounted) setState(() => _status = 'PERMISSION_DENIED');
     return;
   }
 
@@ -94,7 +96,6 @@ Future<void> _initService() async {
 
   _statusSub = _service.statusStream.listen((s) {
     if (!mounted) return;
-    setState(() => _status = s);
     if (s == 'PERMISSION_DENIED') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Step tracking requires activity recognition permission.')),
@@ -147,6 +148,13 @@ Future<void> _initService() async {
       return '${diff.inMinutes} minutes ago';
     } catch (_) {
       return 'never';
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _service.refresh();
     }
   }
 

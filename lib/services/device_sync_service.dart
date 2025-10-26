@@ -37,6 +37,37 @@ class DeviceSyncService {
   // Helper: consistent yyyy-MM-dd for today's sessions and per-day keys
   String _todayKey() => DateTime.now().toIso8601String().substring(0, 10);
 
+  /// Returns a list of all previously paired devices with their IDs and names
+  Future<List<Map<String, String>>> getPairedDevices() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pairedDevices = prefs.getStringList('paired_devices') ?? [];
+    
+    final List<Map<String, String>> devices = [];
+    
+    for (final deviceId in pairedDevices) {
+      final deviceName = prefs.getString('device_${deviceId}_name') ?? 'Unknown Device';
+      devices.add({
+        'id': deviceId,
+        'name': deviceName,
+      });
+    }
+    
+    return devices;
+  }
+
+  /// Returns the currently connected device info if any
+  Future<Map<String, String>?> getConnectedDeviceInfo() async {
+    if (_connectedDeviceId == null) return null;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final deviceName = prefs.getString('device_${_connectedDeviceId}_name') ?? 'Unknown Device';
+    
+    return {
+      'id': _connectedDeviceId!,
+      'name': deviceName,
+    };
+  }
+
   /// Start scanning. If withServiceUuids is null or empty we scan *all* devices
   /// (recommended) — caller can provide filters for narrower scans.
   Future<void> startScan({List<String>? withServiceUuids}) async {
@@ -77,7 +108,8 @@ class DeviceSyncService {
   }
 
   /// Connect to device and attempt to discover & subscribe.
-  Future<void> connectTo(String deviceId) async {
+  /// **UPDATED**: Accepts deviceName to save to persistence.
+  Future<void> connectTo(String deviceId, {required String deviceName}) async {
     if (_connectedDeviceId == deviceId && isConnected) return;
     await disconnect();
 
@@ -93,7 +125,8 @@ class DeviceSyncService {
             debugPrint('Connected to $deviceId');
             _connectedDeviceId = deviceId;
             _connStateController.add(true);
-            await _savePairedDevice(deviceId);
+            // Save both ID and Name
+            await _savePairedDevice(deviceId, deviceName);
             await _discoverAndSubscribe(deviceId);
           } else if (event.connectionState == DeviceConnectionState.disconnected) {
             debugPrint('Disconnected from $deviceId');
@@ -141,6 +174,57 @@ class DeviceSyncService {
     await disconnect();
     await _clearPairedDevice();
   }
+
+  // --- NEW: Hourly Sync Method for Background Task ---
+  /// Attempts to read the step characteristic for hourly synchronization.
+  /// This is called by the background service's onRepeatEvent.
+  Future<void> syncDataFromDevice() async {
+    final deviceId = _connectedDeviceId;
+    if (deviceId == null) {
+      debugPrint('DeviceSyncService: No active connection for hourly sync.');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final savedSvc = prefs.getString('device_${deviceId}_svc');
+    final savedChar = prefs.getString('device_${deviceId}_char');
+
+    if (savedSvc == null || savedChar == null) {
+      debugPrint('DeviceSyncService: No characteristic map for $deviceId, cannot sync.');
+      return;
+    }
+
+    QualifiedCharacteristic qc;
+    try {
+      qc = QualifiedCharacteristic(
+        serviceId: Uuid.parse(savedSvc),
+        characteristicId: Uuid.parse(savedChar),
+        deviceId: deviceId,
+      );
+    } catch (e) {
+      debugPrint('DeviceSyncService: Invalid UUIDs during sync: $savedSvc / $savedChar -> $e');
+      return;
+    }
+
+    try {
+      // 1. Read the characteristic value directly
+      final data = await _ble.readCharacteristic(qc);
+      debugPrint('DeviceSyncService: Read data from $deviceId for sync: $data');
+
+      // 2. Parse and merge the step data (reusing existing logic)
+      final parsed = _parseStepData(data);
+      if (parsed != null && parsed >= 0) {
+        await _mergeExternalSteps(deviceId, parsed);
+        debugPrint('DeviceSyncService: Successfully synced $parsed steps from $deviceId.');
+      } else {
+        debugPrint('DeviceSyncService: Read data could not be parsed as steps.');
+      }
+    } catch (e) {
+      debugPrint('DeviceSyncService: Error reading characteristic for sync: $e');
+      // If reading fails, simply return. The continuous subscription might still be running.
+    }
+  }
+  // --- END NEW METHOD ---
 
   // Discover services/characteristics and subscribe to a suitable characteristic.
   // Strategy:
@@ -259,49 +343,7 @@ class DeviceSyncService {
           if (!completer.isCompleted) completer.complete(true);
 
           // --- NEW: delta-based merging per-device (scoped by date) ---
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            final today = _todayKey();
-            final keyLast = 'device_${deviceId}_last_total_$today';
-            final int? lastTotal = prefs.getInt(keyLast);
-
-            int delta;
-            if (lastTotal == null) {
-              // first time we see this device today.
-              // Treat first reported value as additive contribution by default.
-              delta = parsed;
-            } else {
-              delta = parsed - lastTotal;
-              if (delta < 0) {
-                // device counter likely reset/restarted — treat current reading as new contribution
-                delta = parsed;
-              }
-            }
-
-            // persist lastTotal for next time (date-scoped)
-            await prefs.setInt(keyLast, parsed);
-
-            // merge delta into today's session
-            final todayDate = _todayKey();
-            final session = await _db.getSessionForDay(todayDate);
-
-            if (session == null) {
-              // create session with delta as initial user_steps; leave system_base at 0 so phone sensor can still work
-              await _db.saveSession(todayDate, 0, delta, calories: 0.0, distanceMeters: delta * 0.78);
-            } else {
-              final currentUser = (session['user_steps'] as int?) ?? 0;
-              final newUser = (currentUser + delta).clamp(0, 1 << 30);
-              final calories = session['calories'] as double? ?? 0.0;
-              final distance = session['distance_m'] as double? ?? (newUser * 0.78);
-              await _db.updateUserSteps(todayDate, newUser, calories, distance);
-            }
-
-            // emit external steps so UI updates immediately
-            final updatedUser = (session == null) ? delta : ((session['user_steps'] as int? ?? 0) + delta);
-            _extStepsController.add(updatedUser);
-          } catch (e) {
-            debugPrint('DB merge error from device $deviceId: $e');
-          }
+          await _mergeExternalSteps(deviceId, parsed);
         }
       }, onError: (e) {
         debugPrint('subscribe error on $serviceUuid/$charUuid: $e');
@@ -314,7 +356,7 @@ class DeviceSyncService {
 
       final result = await completer.future;
       if (!result) {
-        await testSub?.cancel();
+        await testSub.cancel();
         return false;
       }
 
@@ -327,6 +369,67 @@ class DeviceSyncService {
       return false;
     }
   }
+
+  Future<void> _mergeExternalSteps(String deviceId, int parsedSteps) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final today = _todayKey();
+      final keyLast = 'device_${deviceId}_last_total_$today';
+      final int? lastTotal = prefs.getInt(keyLast);
+
+      int delta;
+      if (lastTotal == null) {
+        // first time we see this device today.
+        // Treat first reported value as additive contribution by default.
+        delta = parsedSteps;
+      } else {
+        delta = parsedSteps - lastTotal;
+        if (delta < 0) {
+          // device counter likely reset/restarted — treat current reading as new contribution
+          delta = parsedSteps;
+        }
+      }
+
+      // persist lastTotal for next time (date-scoped)
+      await prefs.setInt(keyLast, parsedSteps);
+
+      // merge delta into today's session
+      final todayDate = _todayKey();
+      final session = await _db.getSessionForDay(todayDate);
+
+      // Calculate new user steps and derived metrics
+      final currentUser = (session?['user_steps'] as int?) ?? 0;
+      final newUser = (currentUser + delta).clamp(0, 1 << 30);
+      
+      // Use average stride length (0.78m) and calorie estimate for derived fields
+      final newDistance = newUser * 0.78; 
+      final newCalories = newUser * 0.04;
+
+      if (session == null) {
+        // create session with delta as initial user_steps; leave system_base at 0
+        await _db.saveSession(
+          todayDate, 
+          0, 
+          newUser, 
+          calories: newCalories, 
+          distanceMeters: newDistance,
+        );
+      } else {
+        await _db.updateUserSteps(
+          todayDate, 
+          newUser, 
+          newCalories, 
+          newDistance,
+        );
+      }
+
+      // emit external steps so UI updates immediately
+      _extStepsController.add(newUser);
+    } catch (e) {
+      debugPrint('DB merge error from device $deviceId: $e');
+    }
+  }
+
 
   int? _parseStepData(List<int> rawData) {
     if (rawData.isEmpty) return null;
@@ -358,30 +461,39 @@ class DeviceSyncService {
   Future<void> loadPaired() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getString('paired_device_id');
+    final name = prefs.getString('paired_device_name');
     if (id != null && !kIsWeb) {
       // attempt auto-connect but don't throw on failure
       try {
-        await connectTo(id);
+        // Pass the retrieved name to connectTo, use id as fallback if name is null
+        await connectTo(id, deviceName: name ?? id);
       } catch (e) {
         debugPrint('Auto-connect failed for $id: $e');
       }
     }
   }
 
-  Future<void> _savePairedDevice(String id) async {
+  Future<void> _savePairedDevice(String deviceId, String deviceName) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('paired_device_id', id);
+    await prefs.setString('paired_device_id', deviceId);
+    await prefs.setString('paired_device_name', deviceName);
+    
+    // Add to paired devices list if not already there
+    final pairedList = prefs.getStringList('paired_devices') ?? [];
+    if (!pairedList.contains(deviceId)) {
+      pairedList.add(deviceId);
+      await prefs.setStringList('paired_devices', pairedList);
+    }
+    
+    // Save device name
+    await prefs.setString('device_${deviceId}_name', deviceName);
   }
 
   Future<void> _clearPairedDevice() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('paired_device_id');
-    // also clear per-day last_total keys for today to avoid leftovers
-    final today = _todayKey();
-    final keys = prefs.getKeys().where((k) => k.startsWith('device_') && k.endsWith('_$today')).toList();
-    for (final k in keys) {
-      await prefs.remove(k);
-    }
+    await prefs.remove('paired_device_name');
+    // Note: We don't remove from paired_devices list to keep history
   }
 
   void dispose() {
@@ -389,6 +501,5 @@ class DeviceSyncService {
     _scanController.close();
     _extStepsController.close();
     _connStateController.close();
-    disconnect();
   }
 }

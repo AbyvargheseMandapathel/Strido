@@ -12,7 +12,8 @@ Future<void> main() async {
   
   // Initialize services with error handling
   try {
-    await ForegroundService.start();
+    // Initialize the 24/7 foreground service with hourly sync
+    await ForegroundService.initialize();
     await BackgroundFetchService.setup();
   } catch (e) {
     debugPrint('Error initializing services: $e');
