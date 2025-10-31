@@ -4,7 +4,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-// import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class StepDatabase {
   static final StepDatabase instance = StepDatabase._init();
@@ -55,7 +56,7 @@ class StepDatabase {
       }
     } catch (e) {
       // Non-fatal—restore is best-effort.
-      print('DB restore error: $e');
+      debugPrint('DB restore error: $e');
     }
   }
 
@@ -90,7 +91,7 @@ class StepDatabase {
       final dest = File(p.join(targetDir.path, 'steps_backup_$now.db'));
       return await dbFile.copy(dest.path);
     } catch (e) {
-      print('DB export error: $e');
+      debugPrint('DB export error: $e');
       return null;
     }
   }
@@ -106,7 +107,12 @@ class StepDatabase {
     final path = p.join(dbPath, filePath);
 
     // bump DB version to 2 to add last_updated column if upgrading
-    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _upgradeDB);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -117,7 +123,11 @@ class StepDatabase {
         user_steps INTEGER NOT NULL,
         calories REAL NOT NULL,
         distance_m REAL NOT NULL,
-        last_updated TEXT
+        last_updated TEXT,
+        walking_start_time TEXT,
+        walking_end_time TEXT,
+        height_cm REAL,
+        weight_kg REAL
       )
     ''');
   }
@@ -127,6 +137,14 @@ class StepDatabase {
       // add last_updated column in migration
       try {
         await db.execute('ALTER TABLE sessions ADD COLUMN last_updated TEXT;');
+        await db.execute(
+          'ALTER TABLE sessions ADD COLUMN walking_start_time TEXT;',
+        );
+        await db.execute(
+          'ALTER TABLE sessions ADD COLUMN walking_end_time TEXT;',
+        );
+        await db.execute('ALTER TABLE sessions ADD COLUMN height_cm REAL;');
+        await db.execute('ALTER TABLE sessions ADD COLUMN weight_kg REAL;');
       } catch (e) {
         // ignore if already exists or unsupported
       }
@@ -145,26 +163,35 @@ class StepDatabase {
     return rows.first;
   }
 
-  Future<void> saveSession(String date, int systemBase, int userSteps,
-      {double calories = 0.0, double distanceMeters = 0.0}) async {
+  Future<void> saveSession(
+    String date,
+    int systemBase,
+    int userSteps, {
+    double calories = 0.0,
+    double distanceMeters = 0.0,
+    String? walkingStartTime,
+    String? walkingEndTime,
+  }) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    await db.insert(
-      'sessions',
-      {
-        'date': date,
-        'system_base_steps': systemBase,
-        'user_steps': userSteps,
-        'calories': calories,
-        'distance_m': distanceMeters,
-        'last_updated': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('sessions', {
+      'date': date,
+      'system_base_steps': systemBase,
+      'user_steps': userSteps,
+      'calories': calories,
+      'distance_m': distanceMeters,
+      'last_updated': now,
+      'walking_start_time': walkingStartTime,
+      'walking_end_time': walkingEndTime,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateUserSteps(
-      String date, int userSteps, double calories, double distanceMeters) async {
+    String date,
+    int userSteps,
+    double calories,
+    double distanceMeters,
+  ) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     await db.update(
@@ -195,6 +222,39 @@ class StepDatabase {
     final row = await getSessionForDay(date);
     if (row == null) return null;
     return row['last_updated'] as String?;
+  }
+
+  /// Get the step baseline for a specific day (steps at midnight)
+  Future<int?> getStepBaselineForDay(String date) async {
+    final session = await getSessionForDay(date);
+    return session?['system_base_steps'] as int?;
+  }
+
+  /// Set the step baseline for a specific day (steps at midnight)
+  Future<void> setStepBaselineForDay(String date, int baseline) async {
+    final db = await database;
+    await db.update(
+      'sessions',
+      {'system_base_steps': baseline},
+      where: 'date = ?',
+      whereArgs: [date],
+    );
+  }
+
+  /// Save user profile (height and weight)
+  Future<void> saveUserProfile({double? heightCm, double? weightKg}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (heightCm != null) await prefs.setDouble('user_height_cm', heightCm);
+    if (weightKg != null) await prefs.setDouble('user_weight_kg', weightKg);
+  }
+
+  /// Get user profile
+  Future<Map<String, double?>> getUserProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'heightCm': prefs.getDouble('user_height_cm'),
+      'weightKg': prefs.getDouble('user_weight_kg'),
+    };
   }
 
   Future close() async {

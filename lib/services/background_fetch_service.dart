@@ -37,7 +37,11 @@ void callbackDispatcher() {
       });
 
       // Update notification
-      await NotificationService.updateForegroundNotification(steps, DateTime.now().toIso8601String());
+      await NotificationService.showForegroundNotification(
+        title: 'Strido - $steps Steps',
+        message: DateTime.now().toIso8601String(),
+        isPersistent: true,
+      );
     }
     return Future.value(true);
   });

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/database/step_database.dart';
@@ -26,11 +25,86 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _pairedId;
   String? _pairedName;
 
+  // User profile
+  double? _heightCm;
+  double? _weightKg;
+
   @override
   void initState() {
     super.initState();
     _loadPaired();
+    _loadProfile();
     _deviceService.loadPaired();
+  }
+
+  Future<void> _loadProfile() async {
+    final profile = await _db.getUserProfile();
+    if (mounted) {
+      setState(() {
+        _heightCm = profile['heightCm'];
+        _weightKg = profile['weightKg'];
+      });
+    }
+  }
+
+  Future<void> _editProfile() async {
+    final heightController = TextEditingController(
+      text: _heightCm?.toString() ?? '',
+    );
+    final weightController = TextEditingController(
+      text: _weightKg?.toString() ?? '',
+    );
+
+    await showDialog(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Your Profile'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: heightController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Height (cm)',
+                    hintText: 'Enter your height',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: weightController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Weight (kg)',
+                    hintText: 'Enter your weight',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final height = double.tryParse(heightController.text);
+                  final weight = double.tryParse(weightController.text);
+                  if (height != null || weight != null) {
+                    await _db.saveUserProfile(
+                      heightCm: height,
+                      weightKg: weight,
+                    );
+                    await _loadProfile();
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _loadPaired() async {
@@ -74,11 +148,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _pairWith(DiscoveredDevice dev) async {
     await _stopScan();
-    await _deviceService.connectTo(dev.id);
+    final deviceName = dev.name.isNotEmpty ? dev.name : dev.id;
+    await _deviceService.connectTo(dev.id, deviceName: deviceName);
     final prefs = await SharedPreferences.getInstance();
-    if (dev.name.isNotEmpty) {
-      await prefs.setString('device_${dev.id}_name', dev.name);
-    }
+    await prefs.setString('device_${dev.id}_name', deviceName);
     await prefs.setString('paired_device_id', dev.id);
     if (mounted) {
       setState(() {
@@ -86,7 +159,9 @@ class _SettingsPageState extends State<SettingsPage> {
         _pairedName = dev.name.isNotEmpty ? dev.name : null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Paired: ${dev.name.isNotEmpty ? dev.name : dev.id}')),
+        SnackBar(
+          content: Text('Paired: ${dev.name.isNotEmpty ? dev.name : dev.id}'),
+        ),
       );
     }
   }
@@ -104,7 +179,9 @@ class _SettingsPageState extends State<SettingsPage> {
         _pairedId = null;
         _pairedName = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unpaired')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unpaired')));
     }
   }
 
@@ -115,14 +192,20 @@ class _SettingsPageState extends State<SettingsPage> {
       final File? f = await _db.exportBackup();
       if (mounted) {
         if (f != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup saved: ${f.path}')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Backup saved: ${f.path}')));
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup failed or no DB present')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Backup failed or no DB present')),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export error: $e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -137,25 +220,48 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.all(12),
         children: [
           ListTile(
+            leading: const Icon(Icons.person, color: Colors.greenAccent),
+            title: const Text('Your Profile'),
+            subtitle: Text(
+              _heightCm != null || _weightKg != null
+                  ? 'Height: ${_heightCm?.toStringAsFixed(0) ?? 'Not set'} cm, Weight: ${_weightKg?.toStringAsFixed(1) ?? 'Not set'} kg'
+                  : 'Set your height and weight',
+            ),
+            trailing: const Icon(Icons.edit),
+            onTap: _editProfile,
+          ),
+          const Divider(),
+          ListTile(
             leading: const Icon(Icons.backup, color: Colors.greenAccent),
             title: const Text('Export backup'),
             subtitle: const Text('Save DB copy to device storage'),
-            trailing: _exporting
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator())
-                : null,
+            trailing:
+                _exporting
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(),
+                    )
+                    : null,
             onTap: _export,
           ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.watch, color: Colors.greenAccent),
             title: const Text('Wearable / external device'),
-            subtitle: Text(_pairedName ?? (_pairedId == null ? 'Not paired' : _pairedId!)),
-            trailing: _pairedId == null
-                ? TextButton(
-                    onPressed: _scanning ? _stopScan : _startScan,
-                    child: Text(_scanning ? 'Stop' : 'Scan'),
-                  )
-                : TextButton(onPressed: _unpair, child: const Text('Unpair')),
+            subtitle: Text(
+              _pairedName ?? (_pairedId == null ? 'Not paired' : _pairedId!),
+            ),
+            trailing:
+                _pairedId == null
+                    ? TextButton(
+                      onPressed: _scanning ? _stopScan : _startScan,
+                      child: Text(_scanning ? 'Stop' : 'Scan'),
+                    )
+                    : TextButton(
+                      onPressed: _unpair,
+                      child: const Text('Unpair'),
+                    ),
           ),
           if (_scanning)
             Padding(
@@ -166,11 +272,13 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           if (_scanning && _scanResults.isNotEmpty)
-            ..._scanResults.map((d) => ListTile(
-                  title: Text(d.name.isNotEmpty ? d.name : d.id),
-                  subtitle: Text(d.id),
-                  onTap: () => _pairWith(d),
-                )),
+            ..._scanResults.map(
+              (d) => ListTile(
+                title: Text(d.name.isNotEmpty ? d.name : d.id),
+                subtitle: Text(d.id),
+                onTap: () => _pairWith(d),
+              ),
+            ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.info, color: Colors.greenAccent),

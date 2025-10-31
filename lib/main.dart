@@ -1,6 +1,10 @@
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'services/foreground_service.dart';
 import 'services/background_fetch_service.dart';
+import 'services/step_tracker_service.dart';
+import 'services/device_sync_service.dart';
 import 'presentation/step_counter_page.dart';
 import 'presentation/history_page.dart';
 import 'presentation/leaderboard_page.dart';
@@ -9,16 +13,17 @@ import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize services with error handling
   try {
-    await ForegroundService.start();
+    // Initialize the 24/7 foreground service with hourly sync
+    await ForegroundService.initialize();
     await BackgroundFetchService.setup();
   } catch (e) {
     debugPrint('Error initializing services: $e');
     // Continue running the app even if services fail to initialize
   }
-  
+
   runApp(const StridoApp());
 }
 
@@ -27,35 +32,47 @@ class StridoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Strido',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          elevation: 0,
-          centerTitle: true,
+    return MultiProvider(
+      providers: [
+        Provider<StepTrackerService>(
+          create: (_) => StepTrackerService(),
+          dispose: (_, service) => service.dispose(),
         ),
-        colorScheme: const ColorScheme.dark().copyWith(
-          primary: Colors.white,
-          secondary: Color(0xFF69F0AE),
-          tertiary: Color(0xFF1B5E20),
-          background: Colors.black,
-          surface: Color(0xFF121212),
+        Provider<DeviceSyncService>(
+          create: (_) => DeviceSyncService.instance,
         ),
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Colors.black,
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.grey,
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Strido',
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: Colors.black,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            centerTitle: true,
+          ),
+          colorScheme: const ColorScheme.dark().copyWith(
+            primary: Colors.white,
+            secondary: Color(0xFF69F0AE),
+            tertiary: Color(0xFF1B5E20),
+
+            surface: Color(0xFF121212),
+          ),
+          textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+          bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+            backgroundColor: Colors.black,
+            selectedItemColor: Colors.white,
+            unselectedItemColor: Colors.grey,
+          ),
         ),
+        home: const HomeShell(),
       ),
-      home: const HomeShell(),
     );
   }
 }
+
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -129,10 +146,7 @@ class _HomeShellState extends State<HomeShell> {
     }
 
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
@@ -141,14 +155,8 @@ class _HomeShellState extends State<HomeShell> {
         selectedItemColor: Colors.white,
         unselectedItemColor: Colors.grey,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(
             icon: Icon(Icons.leaderboard),
             label: 'Leaderboard',

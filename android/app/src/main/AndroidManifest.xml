@@ -14,21 +14,18 @@
 
     <!-- ========== Health & Activity Permissions ========== -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
-
-    <!-- Health Connect permissions (required for health plugin v13+) -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.WRITE_STEPS" />
 
-    <!-- Optional: background reading (if needed later) -->
-    <!-- <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" /> -->
-
-    <!-- ========== Foreground Service & Notification Permissions ========= -->
+    <!-- ========== Foreground Service & Notifications ========== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
 
     <!-- ========== Hardware Features ========== -->
     <uses-feature
@@ -37,17 +34,20 @@
 
     <!-- ========== Health Connect Queries ========== -->
     <queries>
-        <!-- Required to detect Health Connect app -->
         <package android:name="com.google.android.apps.healthdata" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>
     </queries>
 
+    <!-- ========== Application ========== -->
     <application
+        android:name=".StridoApp"
         android:label="Strido"
-        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:theme="@style/LaunchTheme"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
 
@@ -65,21 +65,20 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
-            <!-- Main launcher -->
+            <!-- Launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- REQUIRED for Health Connect permission rationale screen -->
+            <!-- Health Connect permission rationale -->
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
-
         </activity>
 
-        <!-- Health Connect: Permission usage activity alias -->
+        <!-- Health Connect permission usage activity alias -->
         <activity-alias
             android:name="ViewPermissionUsageActivity"
             android:exported="true"
@@ -91,22 +90,39 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Foreground Service Declaration -->
+        <!-- Foreground Service -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync|remoteMessaging"
-            android:exported="false" />
+            android:foregroundServiceType="dataSync|remoteMessaging|location"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:directBootAware="true"
+            android:enabled="true"
+            android:isolatedProcess="false"
+            android:useAppZygote="true" />
 
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
-            
-        <!-- Notification Channel -->
+        <!-- WorkManager -->
+        <provider
+            android:name="androidx.work.impl.WorkManagerInitializer"
+            android:authorities="${applicationId}.workmanager-init"
+            tools:node="remove" />
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+        <!-- Flutter & Firebase -->
+        <meta-data android:name="flutterEmbedding" android:value="2" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="strido_channel" />
-            
-        <!-- Notification Icon -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />

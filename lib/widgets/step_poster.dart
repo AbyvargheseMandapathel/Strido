@@ -41,13 +41,7 @@ class StepPoster extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 40),
-          Text(
-            date,
-            style: const TextStyle(
-              fontSize: 48,
-              color: Colors.grey,
-            ),
-          ),
+          Text(date, style: const TextStyle(fontSize: 48, color: Colors.grey)),
           const SizedBox(height: 60),
           Text(
             '$steps',
@@ -59,17 +53,14 @@ class StepPoster extends StatelessWidget {
           ),
           const Text(
             'STEPS',
-            style: TextStyle(
-              fontSize: 40,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 40, color: Colors.grey),
           ),
           const SizedBox(height: 50),
           if (rank <= 10)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.greenAccent.withOpacity(0.2),
+                color: Colors.greenAccent.withAlpha((255 * 0.2).round()),
                 borderRadius: BorderRadius.circular(30),
                 border: Border.all(color: Colors.greenAccent, width: 2),
               ),
@@ -85,10 +76,7 @@ class StepPoster extends StatelessWidget {
           const Spacer(),
           Text(
             'Shared by $username',
-            style: const TextStyle(
-              fontSize: 32,
-              color: Colors.white70,
-            ),
+            style: const TextStyle(fontSize: 32, color: Colors.white70),
           ),
         ],
       ),

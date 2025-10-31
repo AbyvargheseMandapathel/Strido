@@ -1,3 +1,5 @@
+
+import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,8 @@ import '../presentation/history_page.dart';
 import '../services/device_sync_service.dart';
 import '../utils/permissions_helper.dart';
 import 'connected_devices_page.dart';
+import '../services/foreground_service.dart';
+
 
 class StepCounterPage extends StatefulWidget {
   const StepCounterPage({super.key});
@@ -14,14 +18,15 @@ class StepCounterPage extends StatefulWidget {
   State<StepCounterPage> createState() => _StepCounterPageState();
 }
 
-class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingObserver {
+class _StepCounterPageState extends State<StepCounterPage>
+    with WidgetsBindingObserver {
   late final StepTrackerService _service;
+  late final DeviceSyncService _deviceSyncService;
   StreamSubscription<int>? _stepsSub;
   StreamSubscription<String>? _statusSub;
 
   int _steps = 0;
   String? _lastUpdated;
-  String _status = 'INITIALIZING';
 
   // Persistent daily goal
   int _stepGoal = 10000;
@@ -30,20 +35,28 @@ class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingOb
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    DeviceSyncService.instance.loadPaired();
-    _service = StepTrackerService();
+    _service = Provider.of<StepTrackerService>(context, listen: false);
+    _deviceSyncService = Provider.of<DeviceSyncService>(context, listen: false);
+    _deviceSyncService.loadPaired();
     _initService();
-    _loadGoal();
+
+    // Initialize step goal from preferences or use default
+    _loadStepGoal();
+
+    // Trigger a data update when the app is opened
+    ForegroundService.updateData();
   }
 
-  Future<void> _loadGoal() async {
+  Future<void> _loadStepGoal() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _stepGoal = prefs.getInt('daily_step_goal') ?? 10000);
+    setState(() {
+      _stepGoal = prefs.getInt('step_goal') ?? 20000;
+    });
   }
 
   Future<void> _saveGoal(int goal) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('daily_step_goal', goal);
+    await prefs.setInt('step_goal', goal);
     if (mounted) setState(() => _stepGoal = goal);
   }
 
@@ -51,89 +64,97 @@ class _StepCounterPageState extends State<StepCounterPage> with WidgetsBindingOb
     final controller = TextEditingController(text: _stepGoal.toString());
     final res = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Set daily step goal'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(hintText: 'Enter step goal'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final val = int.tryParse(controller.text) ?? _stepGoal;
-              Navigator.pop(ctx, val);
-            },
-            child: const Text('Save'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Set daily step goal'),
+            content: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: 'Enter step goal'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final val = int.tryParse(controller.text) ?? _stepGoal;
+                  Navigator.pop(ctx, val);
+                },
+                child: const Text('Save'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (res != null) await _saveGoal(res);
   }
 
-   @override
-Future<void> _initService() async {
-  final permsOk = await PermissionsHelper.ensureBlePermissions(context);
-  if (!permsOk) {
-    if (mounted) setState(() => _status = 'PERMISSION_DENIED');
-    return;
-  }
+  Future<void> _initService() async {
+    final permsOk = await PermissionsHelper.ensureBlePermissions(context);
+    if (!permsOk) {
+      return;
+    }
 
-  await _service.initialize(); // ✅ NO context
+    await _service.initialize(); // ✅ NO context
 
-  _stepsSub = _service.stepStream.listen((steps) {
-    if (!mounted) return;
-    if (!DeviceSyncService.instance.isConnected) {
-      setState(() => _steps = steps);
+    _stepsSub = _service.stepStream.listen((steps) {
+      if (!mounted) return;
+      if (!DeviceSyncService.instance.isConnected) {
+        setState(() => _steps = steps);
+        _updateLastUpdated();
+      }
+    });
+
+    _statusSub = _service.statusStream.listen((s) {
+      if (!mounted) return;
+      if (s == 'PERMISSION_DENIED') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Step tracking requires activity recognition permission.',
+            ),
+          ),
+        );
+      }
+    });
+
+    DeviceSyncService.instance.externalStepStream.listen((extSteps) {
+      if (!mounted) return;
+      setState(() => _steps = extSteps);
       _updateLastUpdated();
-    }
-  });
+    });
 
-  _statusSub = _service.statusStream.listen((s) {
-    if (!mounted) return;
-    setState(() => _status = s);
-    if (s == 'PERMISSION_DENIED') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Step tracking requires activity recognition permission.')),
-      );
-    }
-  });
+    DeviceSyncService.instance.connectionStateStream.listen((connected) {
+      if (!mounted) return;
+      if (!connected) {
+        _service.refresh().then((_) => _updateLastUpdated());
+      } else {
+        _service
+            .getSession(DateTime.now().toIso8601String().substring(0, 10))
+            .then((s) {
+              if (!mounted) return;
+              if (s != null) {
+                setState(() {
+                  _steps = s['user_steps'] as int? ?? 0;
+                  _lastUpdated = s['last_updated'] as String?;
+                });
+              }
+            });
+      }
+    });
 
-  DeviceSyncService.instance.externalStepStream.listen((extSteps) {
-    if (!mounted) return;
-    setState(() => _steps = extSteps);
     _updateLastUpdated();
-  });
-
-  DeviceSyncService.instance.connectionStateStream.listen((connected) {
-    if (!mounted) return;
-    if (!connected) {
-      _service.refresh().then((_) => _updateLastUpdated());
-    } else {
-      _service.getSession(DateTime.now().toIso8601String().substring(0, 10)).then((s) {
-        if (!mounted) return;
-        if (s != null) {
-          setState(() {
-            _steps = s['user_steps'] as int? ?? 0;
-            _lastUpdated = s['last_updated'] as String?;
-          });
-        }
-      });
-    }
-  });
-
-  _updateLastUpdated();
-}
+  }
 
   Future<void> _updateLastUpdated() async {
     final today = DateTime.now().toIso8601String().substring(0, 10);
     final session = await _service.getSession(today);
     if (!mounted) return;
     setState(() {
-      _lastUpdated = session == null ? null : session['last_updated'] as String?;
+      _lastUpdated =
+          session == null ? null : session['last_updated'] as String?;
     });
   }
 
@@ -151,6 +172,14 @@ Future<void> _initService() async {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _service.refresh();
+      ForegroundService.updateData();
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stepsSub?.cancel();
@@ -161,7 +190,8 @@ Future<void> _initService() async {
 
   @override
   Widget build(BuildContext context) {
-    final percent = (_stepGoal > 0) ? (_steps / _stepGoal).clamp(0.0, 1.0) : 0.0;
+    final percent =
+        (_stepGoal > 0) ? (_steps / _stepGoal).clamp(0.0, 1.0) : 0.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -174,9 +204,9 @@ Future<void> _initService() async {
             tooltip: 'History',
             icon: const Icon(Icons.history, color: Colors.greenAccent),
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoryPage()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const HistoryPage()));
             },
           ),
           IconButton(
@@ -188,13 +218,19 @@ Future<void> _initService() async {
             onSelected: (v) {
               if (v == 'connected') {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ConnectedDevicesPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const ConnectedDevicesPage(),
+                  ),
                 );
               }
             },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'connected', child: Text('Connected devices')),
-            ],
+            itemBuilder:
+                (_) => [
+                  const PopupMenuItem(
+                    value: 'connected',
+                    child: Text('Connected devices'),
+                  ),
+                ],
           ),
         ],
       ),
@@ -228,16 +264,17 @@ Future<void> _initService() async {
                       TweenAnimationBuilder<double>(
                         tween: Tween<double>(begin: 0.0, end: percent),
                         duration: const Duration(milliseconds: 700),
-                        builder: (context, animatedPercent, _) => SizedBox(
-                          width: 220,
-                          height: 220,
-                          child: CircularProgressIndicator(
-                            value: animatedPercent,
-                            strokeWidth: 14,
-                            color: Colors.greenAccent,
-                            backgroundColor: Colors.white12,
-                          ),
-                        ),
+                        builder:
+                            (context, animatedPercent, _) => SizedBox(
+                              width: 220,
+                              height: 220,
+                              child: CircularProgressIndicator(
+                                value: animatedPercent,
+                                strokeWidth: 14,
+                                color: Colors.greenAccent,
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
                       ),
                       Column(
                         mainAxisSize: MainAxisSize.min,
@@ -262,14 +299,23 @@ Future<void> _initService() async {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('${(percent * 100).toStringAsFixed(0)}% of goal', style: const TextStyle(color: Colors.white70)),
+                Text(
+                  '${(percent * 100).toStringAsFixed(0)}% of goal',
+                  style: const TextStyle(color: Colors.white70),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('Goal: $_stepGoal', style: const TextStyle(color: Colors.white70)),
+                    Text(
+                      'Goal: $_stepGoal',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
                     const SizedBox(width: 16),
-                    Text('${(percent * 100).toStringAsFixed(0)}%', style: const TextStyle(color: Colors.greenAccent)),
+                    Text(
+                      '${(percent * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(color: Colors.greenAccent),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
