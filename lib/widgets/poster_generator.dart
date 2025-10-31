@@ -1,4 +1,3 @@
-
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
@@ -26,15 +25,15 @@ class PosterGenerator {
     final fontData = await rootBundle.load('assets/fonts/arial.ttf');
     final font = img.BitmapFont.fromZip(fontData.buffer.asUint8List());
 
-    // Draw the content
-    _drawText(image, font, 'STRIDO', 360, 200, size: 5);
-    _drawText(image, font, date, 400, 350, size: 3);
-    _drawText(image, font, steps.toString(), 300, 700, size: 10);
-    _drawText(image, font, 'STEPS', 420, 900, size: 3);
+    // Draw the content with corrected font sizes
+    _drawText(image, font, 'STRIDO', 360, 200, size: 40);
+    _drawText(image, font, date, 400, 350, size: 25);
+    _drawText(image, font, steps.toString(), 300, 700, size: 80);
+    _drawText(image, font, 'STEPS', 420, 900, size: 30);
     if (rank <= 10) {
-      _drawText(image, font, 'RANK #$rank', 380, 1100, size: 4);
+      _drawText(image, font, 'RANK #$rank', 380, 1100, size: 35);
     }
-    _drawText(image, font, 'Shared by $username', 350, 1600, size: 3);
+    _drawText(image, font, 'Shared by $username', 350, 1600, size: 25);
 
     // Add the logo
     final logoBytes = await rootBundle.load('assets/icon/logo.png');
