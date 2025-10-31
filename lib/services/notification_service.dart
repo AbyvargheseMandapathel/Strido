@@ -151,15 +151,11 @@ class NotificationService {
     developer.log('Distance: $distance');
     developer.log('Last Sync: $lastSync');
     try {
-      String message;
-      if (lastSync != null) {
-        message = 'Stridio is running • $steps steps';
-      } else {
-        message = 'Stridio is running • $steps steps';
-      }
+      // Always show "Strido is running - {steps}"
+      final message = 'Strido is running - $steps';
 
       await showForegroundNotification(
-        title: 'Stridio is Running',
+        title: 'Strido is Running',
         message: message,
         isPersistent: true,
       );

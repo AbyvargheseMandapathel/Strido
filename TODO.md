@@ -6,3 +6,4 @@
 - [x] Fix NotificationService to work properly with Flutter local notifications
 - [x] Clean up code warnings and unused imports
 - [x] Verify notification service implementation
+- [x] Ensure notification shows continuously with step count ("Strido is running - {steps}")
