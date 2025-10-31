@@ -1,4 +1,4 @@
-# step_tracker_app
+# Strido
 
 A new Flutter project.
 
