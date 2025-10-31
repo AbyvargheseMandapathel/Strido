@@ -28,8 +28,9 @@ class NotificationService {
           return false;
         }
 
-        // Check if notifications are enabled
+        debugPrint('Checking notification permissions...');
         final bool? enabled = await plugin.areNotificationsEnabled();
+        debugPrint('Notifications enabled: $enabled');
 
         if (enabled != true) {
           // On Android 13+, we need to request the POST_NOTIFICATIONS permission
@@ -144,6 +145,11 @@ class NotificationService {
     required double distance,
     DateTime? lastSync,
   }) async {
+    developer.log('Updating notification with data...');
+    developer.log('Steps: $steps');
+    developer.log('Calories: $calories');
+    developer.log('Distance: $distance');
+    developer.log('Last Sync: $lastSync');
     try {
       final distanceKm = (distance / 1000).toStringAsFixed(2);
 
@@ -182,6 +188,10 @@ class NotificationService {
     String? payload,
     bool isPersistent = true,
   }) async {
+    developer.log('Showing foreground notification...');
+    developer.log('Title: $title');
+    developer.log('Message: $message');
+    developer.log('Is Persistent: $isPersistent');
     try {
       final androidDetails = AndroidNotificationDetails(
         isPersistent ? _foregroundChannelId : _channelId,
@@ -202,23 +212,6 @@ class NotificationService {
         onlyAlertOnce: true,
       );
 
-      await _flutterLocalNotificationsPlugin.show(
-        _notificationId,
-        title,
-        message,
-        NotificationDetails(
-          android: androidDetails,
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: false,
-          ),
-        ),
-        payload: payload,
-      );
-
-      _isForegroundServiceStarted = isPersistent;
-
       if (isPersistent) {
         // Request to keep CPU on for background processing
         // This is important for step counting to work reliably
@@ -236,6 +229,23 @@ class NotificationService {
         _isForegroundServiceStarted = true;
         developer.log('Foreground service started');
       }
+
+      await _flutterLocalNotificationsPlugin.show(
+        _notificationId,
+        title,
+        message,
+        NotificationDetails(
+          android: androidDetails,
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: false,
+          ),
+        ),
+        payload: payload,
+      );
+
+      _isForegroundServiceStarted = isPersistent;
     } catch (e, stackTrace) {
       developer.log(
         'Error updating notification: $e',
@@ -256,6 +266,7 @@ class NotificationService {
 
   /// Cancel foreground notification
   static Future<void> cancelForegroundNotification() async {
+    _isForegroundServiceStarted = false;
     await cancel();
   }
 }
