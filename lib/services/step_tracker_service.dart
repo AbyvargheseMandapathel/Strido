@@ -94,18 +94,25 @@ class StepTrackerService {
     if (_systemBase == 0) {
       _systemBase = currentSystem;
       _walkingStartTime = DateTime.now().toIso8601String();
-      _db.saveSession(_today, _systemBase, 0, calories: 0.0, distanceMeters: 0.0, walkingStartTime: _walkingStartTime);
+      _db.saveSession(
+        _today,
+        _systemBase,
+        0,
+        calories: 0.0,
+        distanceMeters: 0.0,
+        walkingStartTime: _walkingStartTime,
+      );
     }
 
     // Calculate user steps (delta from base)
     final newSteps = (currentSystem - _systemBase).clamp(0, 1000000);
-    
+
     // Track if walking started
     if (!_isWalking && newSteps > _currentSteps) {
       _isWalking = true;
       _walkingStartTime = DateTime.now().toIso8601String();
     }
-    
+
     _currentSteps = newSteps;
 
     // Compute metrics
@@ -121,25 +128,10 @@ class StepTrackerService {
 
   void _onPedestrianStatus(PedestrianStatus status) {
     _statusController.add(status.status);
-    
+
     // Simple tracking: record when we transition states
     if (_currentSteps > 0 && _walkingStartTime == null) {
       _walkingStartTime = DateTime.now().toIso8601String();
-    }
-  }
-  
-  Future<void> _updateWalkingTimes() async {
-    if (_walkingStartTime != null || _walkingEndTime != null) {
-      final db = await _db.database;
-      await db.update(
-        'sessions',
-        {
-          'walking_start_time': _walkingStartTime,
-          'walking_end_time': _walkingEndTime,
-        },
-        where: 'date = ?',
-        whereArgs: [_today],
-      );
     }
   }
 

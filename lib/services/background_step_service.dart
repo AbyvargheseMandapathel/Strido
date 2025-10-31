@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:intl/intl.dart';
@@ -57,7 +58,7 @@ class StepForegroundTaskHandler extends TaskHandler {
       _stepCountSubscription = Pedometer.stepCountStream.distinct().listen(
         _onStepEvent,
         onError: (error) {
-          print('Pedometer error: $error');
+          debugPrint('Pedometer error: $error');
           _updateNotification(
             title: 'Strido - Sensor Error',
             message: 'Please check step counter permissions',
@@ -72,7 +73,7 @@ class StepForegroundTaskHandler extends TaskHandler {
       // Start periodic sync
       _startPeriodicSync();
     } catch (e) {
-      print('Background service error: $e');
+      debugPrint('Background service error: $e');
       rethrow;
     }
   }
@@ -89,7 +90,10 @@ class StepForegroundTaskHandler extends TaskHandler {
         _dailyStepCount = 0;
 
         // Persist new baseline
-        await StepDatabase.instance.setStepBaselineForDay(today, _stepsAtMidnight);
+        await StepDatabase.instance.setStepBaselineForDay(
+          today,
+          _stepsAtMidnight,
+        );
       }
 
       // Compute today's steps
@@ -109,7 +113,7 @@ class StepForegroundTaskHandler extends TaskHandler {
       // Throttled notification update
       _throttledUpdateNotification();
     } catch (e) {
-      print('Error in step event handler: $e');
+      debugPrint('Error in step event handler: $e');
       // Update notification to show error state
       await FlutterForegroundTask.updateService(
         notificationTitle: 'Strido - Error',
@@ -122,7 +126,8 @@ class StepForegroundTaskHandler extends TaskHandler {
     if (_notificationThrottle?.isActive ?? false) {
       return; // Prevent multiple pending updates
     }
-    if ((_dailyStepCount - (_notificationThrottle?.hashCode ?? 0)).abs() >= 10) {
+    if ((_dailyStepCount - (_notificationThrottle?.hashCode ?? 0)).abs() >=
+        10) {
       _notificationThrottle?.cancel();
       _notificationThrottle = Timer(const Duration(seconds: 2), () {
         FlutterForegroundTask.updateService(
@@ -139,7 +144,7 @@ class StepForegroundTaskHandler extends TaskHandler {
       await Permission.activityRecognition.request();
       await Permission.notification.request();
     } catch (e) {
-      print('Permission request error: $e');
+      debugPrint('Permission request error: $e');
     }
   }
 
@@ -178,10 +183,10 @@ class StepForegroundTaskHandler extends TaskHandler {
         await DeviceSyncService.instance.syncDataFromDevice();
       }
 
-      // Update notification with sync time  
+      // Update notification with sync time
       await _updateNotificationWithSteps(_dailyStepCount);
     } catch (e) {
-      print('Sync error: $e');
+      debugPrint('Sync error: $e');
       await _updateNotification(
         title: 'Strido - Sync Error',
         message: 'Failed to sync steps: ${e.toString()}',
@@ -189,20 +194,28 @@ class StepForegroundTaskHandler extends TaskHandler {
     }
   }
 
-  Future<void> _updateNotificationWithSteps(int steps, {DateTime? lastSync}) async {
+  Future<void> _updateNotificationWithSteps(
+    int steps, {
+    DateTime? lastSync,
+  }) async {
     final calories = _calculateCalories(steps).toInt();
     final distance = _calculateDistance(steps);
-    final syncTime = lastSync != null 
-        ? '\nLast sync: ${DateFormat('h:mm a').format(lastSync)}' 
-        : '';
+    final syncTime =
+        lastSync != null
+            ? '\nLast sync: ${DateFormat('h:mm a').format(lastSync)}'
+            : '';
 
     await FlutterForegroundTask.updateService(
       notificationTitle: 'Strido - $steps Steps',
-      notificationText: '$calories cal • ${distance.toStringAsFixed(2)} m$syncTime',
+      notificationText:
+          '$calories cal • ${distance.toStringAsFixed(2)} m$syncTime',
     );
   }
 
-  Future<void> _updateNotification({required String title, required String message}) async {
+  Future<void> _updateNotification({
+    required String title,
+    required String message,
+  }) async {
     await FlutterForegroundTask.updateService(
       notificationTitle: title,
       notificationText: message,
@@ -223,7 +236,7 @@ class StepForegroundTaskHandler extends TaskHandler {
       _notificationTimer?.cancel();
       await _stepCountSubscription?.cancel();
       await DeviceSyncService.instance.disconnect();
-      
+
       // Make sure to persist the last known step count before stopping
       if (_dailyStepCount > 0) {
         final distance = _calculateDistance(_dailyStepCount);
@@ -236,7 +249,7 @@ class StepForegroundTaskHandler extends TaskHandler {
         );
       }
     } catch (e) {
-      print('Error during cleanup: $e');
+      debugPrint('Error during cleanup: $e');
     }
   }
 }

@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:logger/logger.dart';
+import 'package:flutter/foundation.dart';
 
 class StepDatabase {
   static final StepDatabase instance = StepDatabase._init();
@@ -56,7 +56,7 @@ class StepDatabase {
       }
     } catch (e) {
       // Non-fatal—restore is best-effort.
-      print('DB restore error: $e');
+      debugPrint('DB restore error: $e');
     }
   }
 
@@ -91,7 +91,7 @@ class StepDatabase {
       final dest = File(p.join(targetDir.path, 'steps_backup_$now.db'));
       return await dbFile.copy(dest.path);
     } catch (e) {
-      print('DB export error: $e');
+      debugPrint('DB export error: $e');
       return null;
     }
   }
@@ -107,7 +107,12 @@ class StepDatabase {
     final path = p.join(dbPath, filePath);
 
     // bump DB version to 2 to add last_updated column if upgrading
-    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _upgradeDB);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
   }
 
   Future _createDB(Database db, int version) async {
@@ -132,8 +137,12 @@ class StepDatabase {
       // add last_updated column in migration
       try {
         await db.execute('ALTER TABLE sessions ADD COLUMN last_updated TEXT;');
-        await db.execute('ALTER TABLE sessions ADD COLUMN walking_start_time TEXT;');
-        await db.execute('ALTER TABLE sessions ADD COLUMN walking_end_time TEXT;');
+        await db.execute(
+          'ALTER TABLE sessions ADD COLUMN walking_start_time TEXT;',
+        );
+        await db.execute(
+          'ALTER TABLE sessions ADD COLUMN walking_end_time TEXT;',
+        );
         await db.execute('ALTER TABLE sessions ADD COLUMN height_cm REAL;');
         await db.execute('ALTER TABLE sessions ADD COLUMN weight_kg REAL;');
       } catch (e) {
@@ -154,28 +163,35 @@ class StepDatabase {
     return rows.first;
   }
 
-  Future<void> saveSession(String date, int systemBase, int userSteps,
-      {double calories = 0.0, double distanceMeters = 0.0, String? walkingStartTime, String? walkingEndTime}) async {
+  Future<void> saveSession(
+    String date,
+    int systemBase,
+    int userSteps, {
+    double calories = 0.0,
+    double distanceMeters = 0.0,
+    String? walkingStartTime,
+    String? walkingEndTime,
+  }) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
-    await db.insert(
-      'sessions',
-      {
-        'date': date,
-        'system_base_steps': systemBase,
-        'user_steps': userSteps,
-        'calories': calories,
-        'distance_m': distanceMeters,
-        'last_updated': now,
-        'walking_start_time': walkingStartTime,
-        'walking_end_time': walkingEndTime,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('sessions', {
+      'date': date,
+      'system_base_steps': systemBase,
+      'user_steps': userSteps,
+      'calories': calories,
+      'distance_m': distanceMeters,
+      'last_updated': now,
+      'walking_start_time': walkingStartTime,
+      'walking_end_time': walkingEndTime,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateUserSteps(
-      String date, int userSteps, double calories, double distanceMeters) async {
+    String date,
+    int userSteps,
+    double calories,
+    double distanceMeters,
+  ) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     await db.update(

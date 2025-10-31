@@ -1,0 +1,2 @@
+C:\Users\ABY\Desktop\project\step_tracker_app\android\app\src\main\kotlin\com\example\step_tracker_app\MainActivity.kt
+C:\Users\ABY\Desktop\project\step_tracker_app\android\app\src\main\java\com\example\step_tracker_app\StridoApp.kt

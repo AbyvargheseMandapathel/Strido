@@ -7,9 +7,8 @@ import android.content.Context
 import android.os.Build
 import androidx.work.Configuration
 import androidx.work.WorkManager
-import io.flutter.embedding.android.FlutterApplication
 
-class StridoApp : FlutterApplication(), Configuration.Provider {
+class StridoApp : Application(), Configuration.Provider {
 
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "strido_foreground_channel"

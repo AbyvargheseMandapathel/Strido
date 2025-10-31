@@ -15,23 +15,30 @@ class PermissionsHelper {
     // Android path
     final deviceInfo = DeviceInfoPlugin();
     final androidInfo = await deviceInfo.androidInfo;
-    final sdk = androidInfo.version.sdkInt ?? 0;
+    final sdk = androidInfo.version.sdkInt;
 
     // Show rationale dialog before requesting if not granted
     Future<bool> _showRationale() async {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (dialogCtx) => AlertDialog(
-          title: const Text('Permission required'),
-          content: const Text(
-            'We need Bluetooth & location permissions to discover and connect to wearable devices. '
-            'This allows the app to sync step counts from your watch.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(dialogCtx, true), child: const Text('Continue')),
-          ],
-        ),
+        builder:
+            (dialogCtx) => AlertDialog(
+              title: const Text('Permission required'),
+              content: const Text(
+                'We need Bluetooth & location permissions to discover and connect to wearable devices. '
+                'This allows the app to sync step counts from your watch.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, true),
+                  child: const Text('Continue'),
+                ),
+              ],
+            ),
       );
       return ok ?? false;
     }
@@ -39,22 +46,25 @@ class PermissionsHelper {
     // Request appropriate permissions
     if (sdk >= 31) {
       // Android 12+ : new bluetooth runtime perms
-      final granted = await Permission.bluetoothScan.isGranted &&
+      final granted =
+          await Permission.bluetoothScan.isGranted &&
           await Permission.bluetoothConnect.isGranted;
       if (granted) return true;
 
       final proceed = await _showRationale();
       if (!proceed) return false;
 
-      final results = await [
-        Permission.bluetoothScan,
-        Permission.bluetoothConnect,
-        Permission.bluetoothAdvertise,
-        // keep location as fallback for some devices
-        Permission.locationWhenInUse,
-      ].request();
+      final results =
+          await [
+            Permission.bluetoothScan,
+            Permission.bluetoothConnect,
+            Permission.bluetoothAdvertise,
+            // keep location as fallback for some devices
+            Permission.locationWhenInUse,
+          ].request();
 
-      final ok = (results[Permission.bluetoothScan]?.isGranted ?? false) &&
+      final ok =
+          (results[Permission.bluetoothScan]?.isGranted ?? false) &&
           (results[Permission.bluetoothConnect]?.isGranted ?? false);
       if (ok) return true;
 
@@ -79,19 +89,26 @@ class PermissionsHelper {
   static Future<void> _showOpenSettings(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Permission required'),
-        content: const Text('Permissions are permanently denied. Open app settings to enable them.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () {
-                openAppSettings();
-                Navigator.pop(dialogCtx);
-              },
-              child: const Text('Open settings')),
-        ],
-      ),
+      builder:
+          (dialogCtx) => AlertDialog(
+            title: const Text('Permission required'),
+            content: const Text(
+              'Permissions are permanently denied. Open app settings to enable them.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  openAppSettings();
+                  Navigator.pop(dialogCtx);
+                },
+                child: const Text('Open settings'),
+              ),
+            ],
+          ),
     );
   }
 }
