@@ -20,7 +20,7 @@ class PosterGenerator {
 
     // Create a new image with the background
     final image = img.Image(width: 1080, height: 1920);
-    img.drawImage(image, bgImage);
+    img.compositeImage(image, bgImage);
 
     // Load the font
     final fontData = await rootBundle.load('assets/fonts/arial.ttf');
@@ -40,7 +40,7 @@ class PosterGenerator {
     final logoBytes = await rootBundle.load('assets/icon/logo.png');
     final logoImage = img.decodeImage(logoBytes.buffer.asUint8List());
     if (logoImage != null) {
-      img.drawImage(image, logoImage, dstX: 440, dstY: 1700);
+      img.compositeImage(image, logoImage, dstX: 440, dstY: 1700);
     }
 
     // Save the image
