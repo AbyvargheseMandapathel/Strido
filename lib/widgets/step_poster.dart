@@ -22,64 +22,134 @@ class StepPoster extends StatelessWidget {
       height: 1920,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF121212), Color(0xFF1B5E20)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A237E), Color(0xFF880E4F)],
         ),
       ),
-      padding: const EdgeInsets.all(80),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          const Text(
-            'STRIDO',
-            style: TextStyle(
-              fontSize: 72,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              fontFamily: 'Helvetica',
-            ),
-          ),
-          const SizedBox(height: 40),
-          Text(date, style: const TextStyle(fontSize: 48, color: Colors.grey)),
-          const SizedBox(height: 60),
-          Text(
-            '$steps',
-            style: const TextStyle(
-              fontSize: 120,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const Text(
-            'STEPS',
-            style: TextStyle(fontSize: 40, color: Colors.grey),
-          ),
-          const SizedBox(height: 50),
-          if (rank <= 10)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.greenAccent.withAlpha((255 * 0.2).round()),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.greenAccent, width: 2),
-              ),
-              child: Text(
-                '🏆 Rank #$rank',
-                style: const TextStyle(
-                  fontSize: 42,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.greenAccent,
-                ),
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.1,
+              child: Image.asset(
+                'assets/images/strido_story_bg.png',
+                fit: BoxFit.cover,
               ),
             ),
-          const Spacer(),
-          Text(
-            'Shared by $username',
-            style: const TextStyle(fontSize: 32, color: Colors.white70),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(80),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _buildHeader(),
+                const Spacer(),
+                _buildStepCount(),
+                const SizedBox(height: 30),
+                _buildRank(),
+                const Spacer(),
+                _buildFooter(),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Column(
+      children: [
+        const Text(
+          'STRIDO',
+          style: TextStyle(
+            fontSize: 82,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            fontFamily: 'Helvetica',
+            letterSpacing: 2,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          date,
+          style: const TextStyle(
+            fontSize: 48,
+            color: Colors.white70,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepCount() {
+    return Column(
+      children: [
+        Text(
+          '$steps',
+          style: const TextStyle(
+            fontSize: 200,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                blurRadius: 20.0,
+                color: Colors.black45,
+                offset: Offset(5.0, 5.0),
+              ),
+            ],
+          ),
+        ),
+        const Text(
+          'STEPS',
+          style: TextStyle(
+            fontSize: 50,
+            color: Colors.white70,
+            fontWeight: FontWeight.w300,
+            letterSpacing: 8,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRank() {
+    if (rank > 10) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+      decoration: BoxDecoration(
+        color: Colors.pinkAccent.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: Colors.pinkAccent, width: 3),
+      ),
+      child: Text(
+        '🏆 RANK #$rank',
+        style: const TextStyle(
+          fontSize: 52,
+          fontWeight: FontWeight.bold,
+          color: Colors.pinkAccent,
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooter() {
+    return Column(
+      children: [
+        Text(
+          'Shared by $username',
+          style: const TextStyle(fontSize: 36, color: Colors.white),
+        ),
+        const SizedBox(height: 20),
+        Image.asset(
+          'assets/icon/logo.png',
+          height: 80,
+        ),
+      ],
     );
   }
 }
