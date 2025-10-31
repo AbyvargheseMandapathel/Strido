@@ -2,7 +2,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter/material.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin
@@ -12,6 +11,14 @@ class NotificationService {
   static const String _channelName = 'Strido Tracker';
   static const String _channelDescription =
       'Tracks your steps in the background';
+
+  static const String _foregroundChannelId = 'strido_foreground_channel';
+  static const String _foregroundChannelName = 'Strido Tracker Service';
+  static const String _foregroundChannelDescription =
+      'Keeps Strido running in the background to track your steps 24/7';
+
+  static const int _notificationId = 888;
+  static bool _isForegroundServiceStarted = false;
 
   // Check and request notification permissions (required for Android 13+)
   static Future<bool> checkAndRequestPermissions() async {
@@ -55,13 +62,6 @@ class NotificationService {
     }
   }
 
-  static const int _notificationId = 888;
-  static bool _isForegroundServiceStarted = false;
-  static const String _foregroundChannelId = 'strido_foreground_channel';
-  static const String _foregroundChannelName = 'Strido Tracker Service';
-  static const String _foregroundChannelDescription =
-      'Keeps Strido running in the background to track your steps 24/7';
-
   static Future<void> init() async {
     try {
       developer.log('Initializing notification service...');
@@ -90,7 +90,7 @@ class NotificationService {
             _foregroundChannelId,
             _foregroundChannelName,
             description: _foregroundChannelDescription,
-            importance: Importance.low,
+            importance: Importance.min,
             playSound: false,
             showBadge: false,
             enableVibration: false,
@@ -151,8 +151,6 @@ class NotificationService {
     developer.log('Distance: $distance');
     developer.log('Last Sync: $lastSync');
     try {
-      final distanceKm = (distance / 1000).toStringAsFixed(2);
-
       String message;
       if (lastSync != null) {
         message = 'Stridio is running • $steps steps';
@@ -168,18 +166,6 @@ class NotificationService {
     } catch (e) {
       developer.log('Error updating notification with data: $e');
     }
-  }
-
-  static String _formatTime(DateTime time) {
-    final hour =
-        time.hour > 12
-            ? time.hour - 12
-            : time.hour == 0
-            ? 12
-            : time.hour;
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
   }
 
   static Future<void> showForegroundNotification({
@@ -198,37 +184,16 @@ class NotificationService {
         isPersistent ? _foregroundChannelName : _channelName,
         channelDescription:
             isPersistent ? _foregroundChannelDescription : _channelDescription,
-        importance: isPersistent ? Importance.low : Importance.high,
-        priority: isPersistent ? Priority.low : Priority.high,
+        importance: isPersistent ? Importance.min : Importance.high,
+        priority: isPersistent ? Priority.min : Priority.high,
         ongoing: isPersistent,
         autoCancel: !isPersistent,
-        showWhen: !isPersistent,
+        showWhen: false,
         enableVibration: false,
         playSound: false,
-        channelShowBadge: !isPersistent,
+        channelShowBadge: false,
         visibility: NotificationVisibility.public,
-        // Ensure the notification can't be dismissed
-        // ignore: deprecated_member_use
-        onlyAlertOnce: true,
       );
-
-      if (isPersistent) {
-        // Request to keep CPU on for background processing
-        // This is important for step counting to work reliably
-        developer.log('Starting foreground service...');
-        await _flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >()
-            ?.startForegroundService(
-              _notificationId,
-              title,
-              message, // Use the message parameter
-              notificationDetails: androidDetails,
-            );
-        _isForegroundServiceStarted = true;
-        developer.log('Foreground service started');
-      }
 
       await _flutterLocalNotificationsPlugin.show(
         _notificationId,
@@ -237,8 +202,8 @@ class NotificationService {
         NotificationDetails(
           android: androidDetails,
           iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
+            presentAlert: false,
+            presentBadge: false,
             presentSound: false,
           ),
         ),
@@ -246,9 +211,10 @@ class NotificationService {
       );
 
       _isForegroundServiceStarted = isPersistent;
+      developer.log('Foreground notification ${isPersistent ? 'started' : 'shown'} successfully');
     } catch (e, stackTrace) {
       developer.log(
-        'Error updating notification: $e',
+        'Error showing notification: $e',
         error: e,
         stackTrace: stackTrace,
       );

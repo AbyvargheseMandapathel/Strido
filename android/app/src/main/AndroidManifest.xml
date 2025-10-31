@@ -90,17 +90,6 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Foreground Service -->
-        <service
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync|remoteMessaging|location"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:directBootAware="true"
-            android:enabled="true"
-            android:isolatedProcess="false"
-            android:useAppZygote="true" />
-
         <!-- WorkManager -->
         <provider
             android:name="androidx.work.impl.WorkManagerInitializer"
