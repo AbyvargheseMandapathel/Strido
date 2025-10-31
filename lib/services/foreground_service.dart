@@ -65,7 +65,6 @@ class ForegroundService {
     }
   }
 
-  // Stop the foreground service
   static Future<void> stop() async {
     try {
       _watchdogTimer?.cancel();
@@ -75,6 +74,11 @@ class ForegroundService {
     } catch (e) {
       debugPrint('[$_tag] Error stopping foreground service: $e');
     }
+  }
+
+  // Manually trigger a data update
+  static Future<void> updateData() async {
+    _updateNotificationWithCurrentData();
   }
 
   // Update notification with current step data

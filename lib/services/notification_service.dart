@@ -155,7 +155,7 @@ class NotificationService {
       }
 
       await showForegroundNotification(
-        title: 'Strido Step Tracker',
+        title: 'Stridio is Running',
         message: message,
         isPersistent: true,
       );
@@ -229,8 +229,8 @@ class NotificationService {
             >()
             ?.startForegroundService(
               _notificationId,
-              'Strido is Running',
-              message,
+              title,
+              message, // Use the message parameter
               notificationDetails: androidDetails,
             );
         _isForegroundServiceStarted = true;

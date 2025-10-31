@@ -8,6 +8,7 @@ import '../presentation/history_page.dart';
 import '../services/device_sync_service.dart';
 import '../utils/permissions_helper.dart';
 import 'connected_devices_page.dart';
+import '../services/foreground_service.dart';
 
 
 class StepCounterPage extends StatefulWidget {
@@ -41,6 +42,9 @@ class _StepCounterPageState extends State<StepCounterPage>
 
     // Initialize step goal from preferences or use default
     _loadStepGoal();
+
+    // Trigger a data update when the app is opened
+    ForegroundService.updateData();
   }
 
   Future<void> _loadStepGoal() async {
@@ -171,6 +175,7 @@ class _StepCounterPageState extends State<StepCounterPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _service.refresh();
+      ForegroundService.updateData();
     }
   }
 
