@@ -1,4 +1,4 @@
-
+import 'dart:io';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -7,6 +7,7 @@ import '../services/step_tracker_service.dart';
 import '../presentation/history_page.dart';
 import '../services/device_sync_service.dart';
 import '../utils/permissions_helper.dart';
+import '../widgets/poster_generator.dart';
 import 'connected_devices_page.dart';
 import '../services/foreground_service.dart';
 
@@ -174,7 +175,15 @@ class _StepCounterPageState extends State<StepCounterPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _service.refresh();
+      _service.refresh().then((session) {
+        if (!mounted) return;
+        if (session != null) {
+          setState(() {
+            _steps = session['user_steps'] as int? ?? 0;
+            _lastUpdated = session['last_updated'] as String?;
+          });
+        }
+      });
       ForegroundService.updateData();
     }
   }
@@ -200,6 +209,25 @@ class _StepCounterPageState extends State<StepCounterPage>
         backgroundColor: Colors.black,
         foregroundColor: Colors.greenAccent,
         actions: [
+          IconButton(
+            tooltip: 'Share',
+            icon: const Icon(Icons.share, color: Colors.greenAccent),
+            onPressed: () async {
+              final posterFile = await PosterGenerator.createPoster(
+                steps: _steps,
+                date: DateTime.now().toIso8601String().substring(0, 10),
+                rank: 1, // Replace with actual rank
+              );
+              if (posterFile != null) {
+                showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    content: Image.file(posterFile),
+                  ),
+                );
+              }
+            },
+          ),
           IconButton(
             tooltip: 'History',
             icon: const Icon(Icons.history, color: Colors.greenAccent),

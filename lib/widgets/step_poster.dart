@@ -65,7 +65,7 @@ class StepPoster extends StatelessWidget {
         const Text(
           'STRIDO',
           style: TextStyle(
-            fontSize: 82,
+            fontSize: 60,
             fontWeight: FontWeight.bold,
             color: Colors.white,
             fontFamily: 'Helvetica',
@@ -76,7 +76,7 @@ class StepPoster extends StatelessWidget {
         Text(
           date,
           style: const TextStyle(
-            fontSize: 48,
+            fontSize: 36,
             color: Colors.white70,
             fontStyle: FontStyle.italic,
           ),
@@ -91,7 +91,7 @@ class StepPoster extends StatelessWidget {
         Text(
           '$steps',
           style: const TextStyle(
-            fontSize: 200,
+            fontSize: 120,
             fontWeight: FontWeight.w900,
             color: Colors.white,
             shadows: [
@@ -106,7 +106,7 @@ class StepPoster extends StatelessWidget {
         const Text(
           'STEPS',
           style: TextStyle(
-            fontSize: 50,
+            fontSize: 36,
             color: Colors.white70,
             fontWeight: FontWeight.w300,
             letterSpacing: 8,
@@ -128,7 +128,7 @@ class StepPoster extends StatelessWidget {
       child: Text(
         '🏆 RANK #$rank',
         style: const TextStyle(
-          fontSize: 52,
+          fontSize: 40,
           fontWeight: FontWeight.bold,
           color: Colors.pinkAccent,
           letterSpacing: 1.5,
@@ -142,12 +142,12 @@ class StepPoster extends StatelessWidget {
       children: [
         Text(
           'Shared by $username',
-          style: const TextStyle(fontSize: 36, color: Colors.white),
+          style: const TextStyle(fontSize: 28, color: Colors.white),
         ),
         const SizedBox(height: 20),
         Image.asset(
           'assets/icon/logo.png',
-          height: 80,
+          height: 60,
         ),
       ],
     );
