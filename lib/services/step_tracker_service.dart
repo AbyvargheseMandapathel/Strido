@@ -145,10 +145,11 @@ class StepTrackerService {
     _statusController.add('SENSOR_ERROR');
   }
 
-  Future<void> refresh() async {
+  Future<Map<String, Object?>?> refresh() async {
     final session = await _db.getSessionForDay(_today);
     _currentSteps = session?['user_steps'] as int? ?? 0;
     _stepsController.add(_currentSteps);
+    return session;
   }
 
   Future<Map<String, Object?>?> getSession(String date) async {
