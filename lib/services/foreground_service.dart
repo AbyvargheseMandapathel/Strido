@@ -175,9 +175,6 @@ class ForegroundService {
       try {
         debugPrint('[$_tag] Background sync started');
 
-        // Initialize services
-        await NotificationService.init();
-
         // Get today's data
         final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
         final session = await StepDatabase.instance.getSessionForDay(today);
