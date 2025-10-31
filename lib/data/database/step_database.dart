@@ -356,7 +356,7 @@ class StepDatabase {
     await db.insert('sessions', {
       'date': date,
       'system_base_steps': systemBase,
-      'user_steps': user_steps,
+      'user_steps': userSteps,
       'calories': calories,
       'distance_m': distanceMeters,
       'last_updated': now,
