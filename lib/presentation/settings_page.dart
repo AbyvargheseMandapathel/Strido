@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../data/database/step_database.dart';
 import '../services/device_sync_service.dart';
 import '../utils/permissions_helper.dart';
@@ -17,6 +19,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final StepDatabase _db = StepDatabase.instance;
   bool _exporting = false;
+  bool _importing = false;
 
   final DeviceSyncService _deviceService = DeviceSyncService.instance;
   StreamSubscription<DiscoveredDevice>? _scanSub;
@@ -212,6 +215,151 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _exportJsonData() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final File? f = await _db.exportJsonData();
+      if (mounted) {
+        if (f != null) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('JSON data exported: ${f.path}')));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('JSON export failed')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('JSON export error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _importJsonData() async {
+    if (_importing) return;
+    
+    // Show instruction dialog
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import JSON Data'),
+        content: const Text(
+          'To import data:\n'
+          '1. Export the JSON file from another device\n'
+          '2. Copy the file to your device storage\n'
+          '3. Open the file and copy its content\n'
+          '4. Paste it in the next step\n\n'
+          'Note: Make sure the file is a valid JSON export from this app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _showJsonImportDialog();
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showJsonImportDialog() async {
+    final jsonController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Paste JSON Data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Paste your JSON export data below:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: jsonController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Paste JSON data here...',
+              ),
+              maxLines: 10,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final jsonData = jsonController.text.trim();
+              if (jsonData.isEmpty) {
+                Navigator.pop(ctx);
+                return;
+              }
+              
+              Navigator.pop(ctx);
+              await _processJsonImport(jsonData);
+            },
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _processJsonImport(String jsonData) async {
+    if (_importing) return;
+    
+    setState(() => _importing = true);
+    try {
+      // Create a temporary file with the JSON data
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/import_data.json');
+      await tempFile.writeAsString(jsonData);
+      
+      // Import from the temporary file
+      final success = await _db.importJsonData(tempFile);
+      
+      // Clean up temporary file
+      await tempFile.delete();
+      
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Data imported successfully')),
+          );
+          // Refresh the UI to show imported data
+          await _loadProfile();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to import data - invalid JSON format')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Import error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -231,10 +379,22 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: _editProfile,
           ),
           const Divider(),
+          
+          // Database Backup Section
+          const Text(
+            'Data Backup',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.greenAccent,
+            ),
+          ),
+          const SizedBox(height: 8),
+          
           ListTile(
             leading: const Icon(Icons.backup, color: Colors.greenAccent),
-            title: const Text('Export backup'),
-            subtitle: const Text('Save DB copy to device storage'),
+            title: const Text('Export Database Backup'),
+            subtitle: const Text('Save full DB copy (.db file) to device storage'),
             trailing:
                 _exporting
                     ? const SizedBox(
@@ -245,6 +405,37 @@ class _SettingsPageState extends State<SettingsPage> {
                     : null,
             onTap: _export,
           ),
+          
+          ListTile(
+            leading: const Icon(Icons.file_download, color: Colors.greenAccent),
+            title: const Text('Export Data (JSON)'),
+            subtitle: const Text('Export step data to readable JSON file'),
+            trailing:
+                _exporting
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(),
+                    )
+                    : null,
+            onTap: _exportJsonData,
+          ),
+          
+          ListTile(
+            leading: const Icon(Icons.file_upload, color: Colors.greenAccent),
+            title: const Text('Import Data (JSON)'),
+            subtitle: const Text('Import step data from JSON file (paste JSON)'),
+            trailing:
+                _importing
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(),
+                    )
+                    : const Icon(Icons.paste),
+            onTap: _importJsonData,
+          ),
+          
           const Divider(),
           ListTile(
             leading: const Icon(Icons.watch, color: Colors.greenAccent),

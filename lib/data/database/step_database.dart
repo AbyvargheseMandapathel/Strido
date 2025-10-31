@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
@@ -93,6 +94,184 @@ class StepDatabase {
     } catch (e) {
       debugPrint('DB export error: $e');
       return null;
+    }
+  }
+
+  /// Export step data to a JSON file
+  Future<File?> exportJsonData() async {
+    try {
+      debugPrint('Starting JSON export...');
+      
+      // Get all sessions data
+      final sessions = await getAllSessions();
+      debugPrint('Retrieved ${sessions.length} sessions');
+      final profile = await getUserProfile();
+      debugPrint('Retrieved user profile');
+
+      // Create JSON structure
+      final Map<String, dynamic> exportData = {
+        'app': 'Step Tracker',
+        'version': '1.0',
+        'export_date': DateTime.now().toIso8601String(),
+        'sessions': sessions.map((session) => {
+          'date': session['date'],
+          'system_base_steps': session['system_base_steps'],
+          'user_steps': session['user_steps'],
+          'calories': session['calories'],
+          'distance_m': session['distance_m'],
+          'last_updated': session['last_updated'],
+          'walking_start_time': session['walking_start_time'],
+          'walking_end_time': session['walking_end_time'],
+        }).toList(),
+        'user_profile': {
+          'height_cm': profile['heightCm'],
+          'weight_kg': profile['weightKg'],
+        },
+        'settings': {
+          'step_goal': null, // This would be loaded from SharedPreferences if needed
+        },
+      };
+
+      debugPrint('Created JSON structure');
+
+      // Request permission for file storage (Android only)
+      if (!Platform.isIOS && !Platform.isWindows) {
+        final status = await Permission.storage.request();
+        debugPrint('Storage permission status: $status');
+        if (!status.isGranted) {
+          debugPrint('Storage permission denied');
+          return null;
+        }
+      }
+
+      // Get target directory with better error handling
+      Directory? targetDir;
+      try {
+        if (Platform.isAndroid) {
+          // Try external storage first
+          final externalDir = await getExternalStorageDirectory();
+          debugPrint('External storage dir: ${externalDir?.path}');
+          
+          if (externalDir != null) {
+            // Try Download folder
+            final downloadPath = '${externalDir.path}/Download';
+            final downloadDir = Directory(downloadPath);
+            
+            if (await downloadDir.exists()) {
+              targetDir = downloadDir;
+              debugPrint('Using Download directory: ${targetDir.path}');
+            } else {
+              // Create Download directory if it doesn't exist
+              try {
+                await downloadDir.create(recursive: true);
+                targetDir = downloadDir;
+                debugPrint('Created and using Download directory: ${targetDir.path}');
+              } catch (e) {
+                debugPrint('Failed to create Download directory: $e');
+                // Fall back to external directory itself
+                targetDir = externalDir;
+                debugPrint('Using external directory as fallback: ${targetDir.path}');
+              }
+            }
+          }
+        } else if (Platform.isIOS) {
+          // iOS uses Documents directory
+          targetDir = await getApplicationDocumentsDirectory();
+          debugPrint('Using iOS documents directory: ${targetDir.path}');
+        } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          // Desktop platforms
+          targetDir = await getApplicationDocumentsDirectory();
+          debugPrint('Using desktop documents directory: ${targetDir.path}');
+        }
+      } catch (e) {
+        debugPrint('Error getting target directory: $e');
+        return null;
+      }
+
+      if (targetDir == null) {
+        debugPrint('No valid target directory found');
+        return null;
+      }
+
+      // Verify directory is writable
+      if (!await targetDir.exists()) {
+        debugPrint('Target directory does not exist: ${targetDir.path}');
+        return null;
+      }
+
+      // Create filename with timestamp (sanitized)
+      final now = DateTime.now();
+      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+      final fileName = 'strido_backup_$timestamp.json';
+      final filePath = p.join(targetDir.path, fileName);
+
+      debugPrint('Attempting to write file to: $filePath');
+
+      // Write JSON file
+      final file = File(filePath);
+      final jsonString = JsonEncoder.withIndent('  ').convert(exportData);
+      
+      await file.writeAsString(jsonString);
+      debugPrint('Successfully wrote file: ${file.path}');
+      
+      // Verify file was created
+      if (await file.exists()) {
+        final fileSize = await file.length();
+        debugPrint('File created successfully, size: $fileSize bytes');
+        return file;
+      } else {
+        debugPrint('File was not created successfully');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('JSON export error: $e');
+      debugPrint('Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Import step data from a JSON file
+  Future<bool> importJsonData(File file) async {
+    try {
+      // Read and parse JSON file
+      final content = await file.readAsString();
+      final data = json.decode(content);
+
+      // Validate JSON structure
+      if (!data.containsKey('sessions') || data['sessions'] is! List) {
+        throw Exception('Invalid file format: missing sessions data');
+      }
+
+      // Import sessions data
+      final sessions = data['sessions'] as List;
+      for (final session in sessions) {
+        if (session.containsKey('date') && 
+            session.containsKey('user_steps')) {
+          await saveSession(
+            session['date'] as String,
+            session['system_base_steps'] as int? ?? 0,
+            session['user_steps'] as int,
+            calories: (session['calories'] as num?)?.toDouble() ?? 0.0,
+            distanceMeters: (session['distance_m'] as num?)?.toDouble() ?? 0.0,
+            walkingStartTime: session['walking_start_time'] as String?,
+            walkingEndTime: session['walking_end_time'] as String?,
+          );
+        }
+      }
+
+      // Import user profile if available
+      if (data.containsKey('user_profile') && data['user_profile'] is Map) {
+        final profile = data['user_profile'] as Map<String, dynamic>;
+        await saveUserProfile(
+          heightCm: (profile['height_cm'] as num?)?.toDouble(),
+          weightKg: (profile['weight_kg'] as num?)?.toDouble(),
+        );
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('JSON import error: $e');
+      return false;
     }
   }
 

@@ -153,10 +153,17 @@ class _StepCounterPageState extends State<StepCounterPage>
     final today = DateTime.now().toIso8601String().substring(0, 10);
     final session = await _service.getSession(today);
     if (!mounted) return;
-    setState(() {
-      _lastUpdated =
-          session == null ? null : session['last_updated'] as String?;
-    });
+    
+    // If no session exists, don't show "never" - show current time instead
+    if (session == null) {
+      setState(() {
+        _lastUpdated = DateTime.now().toIso8601String();
+      });
+    } else {
+      setState(() {
+        _lastUpdated = session['last_updated'] as String?;
+      });
+    }
   }
 
   String _relativeMinutes(String? iso) {
@@ -175,6 +182,7 @@ class _StepCounterPageState extends State<StepCounterPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Ensure we restore data from database and force update timestamp
       _service.refresh().then((session) {
         if (!mounted) return;
         if (session != null) {
@@ -182,8 +190,16 @@ class _StepCounterPageState extends State<StepCounterPage>
             _steps = session['user_steps'] as int? ?? 0;
             _lastUpdated = session['last_updated'] as String?;
           });
+        } else {
+          // If no session exists, create one to prevent "never" showing
+          setState(() {
+            _steps = 0;
+            _lastUpdated = DateTime.now().toIso8601String();
+          });
         }
       });
+      // Force a timestamp update
+      _updateLastUpdated();
       ForegroundService.updateData();
     }
   }
